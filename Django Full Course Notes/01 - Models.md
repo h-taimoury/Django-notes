@@ -1,0 +1,601 @@
+# Models
+
+## `null=True` vs `blank=True`
+
+The difference between `null=True` and `blank=True` is one of the most common points of confusion for new Django developers.
+
+The fundamental distinction is in **what layer** of your application each option controls:
+
+- **`null=True`**: Controls **database-level** integrity.
+- **`blank=True`**: Controls **form/validation-level** integrity.
+
+---
+
+### 💾 `null=True` (Database)
+
+- **What it does:** Allows a database column to store a `NULL` value (meaning "no data").
+- **Default:** `False` (meaning the database column will be `NOT NULL`).
+- **Effect:** When an object is saved to the database, if no data is supplied for this field, a `NULL` value will be stored in the corresponding database column. If `null=False` and you try to save an object without a value, the database will raise an `IntegrityError` (unless it's a string field—see the note below).
+- **When to use:** Use this for **non-string fields** (like `DateField`, `IntegerField`, `ForeignKey`, etc.) that are optional.
+
+<!-- end list -->
+
+```python
+# Allows the 'published_date' column in the database to be NULL
+published_date = models.DateField(null=True)
+```
+
+---
+
+### 📝 `blank=True` (Validation/Forms)
+
+- **What it does:** Allows the field to be left **empty** in forms (including the Django Admin) and passes Django's model validation.
+- **Default:** `False` (meaning the field is **required**).
+- **Effect:**
+  - If `blank=True`, a form can be submitted with an empty value for this field.
+  - If `blank=False`, the form validation will fail if the field is left empty, showing a "This field is required" error.
+- **When to use:** Use this for **any optional field** that you want users to be able to leave empty in a form.
+
+<!-- end list -->
+
+```python
+# Allows the field to be left blank in a form
+subtitle = models.CharField(max_length=100, blank=True)
+```
+
+---
+
+### 🔑 The Crucial Combination and String Field Note
+
+For most field types (_non-string fields_ like `Date`, `Integer`, `Foreign Key`), if you want a field to be completely optional, you generally need **both** to allow it to be empty in the form _and_ to allow the empty value to be stored in the database:
+
+| Scenario                  | Definition                              | Result                                                        |
+| :------------------------ | :-------------------------------------- | :------------------------------------------------------------ |
+| **Required**              | `null=False, blank=False` (The default) | **Required** in forms and in the database.                    |
+| **Optional (Non-String)** | `null=True, blank=True`                 | **Optional** in forms and stored as **NULL** in the database. |
+
+### ⚠️ Note on `CharField` and `TextField` (String Fields)
+
+For string-based fields like `CharField` and `TextField`, the standard **Django convention** is to **avoid** `null=True`.
+
+- When a string field is left empty (`blank=True`), Django saves the value as an **empty string (`""`)**, not `NULL`.
+- If you use `null=True` on a string field, you introduce **two ways** to represent "no data" (`""` and `NULL`), which can complicate queries and maintenance.
+- **Best Practice for Optional String Fields:** Set **only `blank=True`** and keep `null=False` (the default).
+
+<!-- end list -->
+
+```python
+# Best practice for an optional string field
+optional_bio = models.TextField(blank=True)
+```
+
+---
+
+## Note:
+
+**validation** happens in various places within the Django application layer, while **database integrity** is enforced by the underlying database engine.
+
+Here is a breakdown of these two levels and where your Django application enforces validation.
+
+---
+
+### 1. 📝 Validation Level (Controlled by `blank=True`)
+
+The validation level is the data check that occurs within **your application's Python code**, before any save operation is finalized. Its primary goal is to provide **user-friendly feedback** and enforce business logic.
+
+### Key Aspects of Validation:
+
+- **User Experience:** It prevents users (or APIs) from submitting invalid or incomplete data and instantly gives them an error message (e.g., "This field is required," "Enter a valid email address").
+- **Business Logic:** It enforces constraints beyond basic data types (e.g., checking that a start date is before an end date).
+- **Controlled By:** The `blank=True/False` option on model fields (for required checks) and custom validation methods (`clean()`, `validate()`) on forms, models, and serializers.
+
+### Where Validation Happens in Django:
+
+Your list is spot-on. Validation runs in several places where data enters your application:
+
+- **Django Admin Panel Forms:** When a user clicks "Save" in the admin, the associated `ModelForm` is validated. If you set a field to `blank=False`, the form will show a "This field is required" error.
+- **DRF Browsable API Forms:** Similar to the Admin, the user-facing forms generated by the Django REST Framework (DRF) run the serializer's validation when data is submitted.
+- **DRF Serializers (Deserialization):** This is a critical point. When an API receives JSON or XML data, the serializer runs its `.is_valid(raise_exception=True)` check, which performs validation before the data is saved.
+- **Custom `ModelForm` Submissions:** Any form you write in your views that is based on a Django model automatically runs the model's validation rules (including `blank` checks).
+- **Calling `full_clean()` Manually:** When you are working with a model instance in the shell, a script, or a custom view that doesn't use forms/serializers, you can manually call `instance.full_clean()` to run **all** validation checks defined on the model.
+
+---
+
+### 2. 💾 Database Level Integrity (Controlled by `null=True`)
+
+The database integrity level is the final, non-negotiable set of rules enforced by the **underlying RDBMS** (PostgreSQL, MySQL, etc.).
+
+### Key Aspects of Database Integrity:
+
+- **Guaranteed Consistency:** This is the _last line of defense_. It ensures that no invalid data is physically written to the table, regardless of where the save request originated.
+- **Data Type/Structure:** It enforces SQL rules like `NOT NULL`, `UNIQUE` constraints, `CHECK` constraints, and **referential integrity** (ensuring a `ForeignKey` points to an existing record).
+- **Controlled By:**
+  - The `null=True/False` option (which sets the column's `NULL` or `NOT NULL` status in the SQL schema).
+  - The `unique=True` option.
+  - The `on_delete` argument on `ForeignKey` fields (which defines cascading behavior).
+
+### Why It Is Separate from Validation:
+
+As discussed, validation can be bypassed by:
+
+- **Shell/Scripts:** Creating or updating objects directly in Python without calling `full_clean()`.
+- **Bulk Operations:** Using functions like `Model.objects.update()`, which skip all application logic.
+- **Direct SQL/Database Access:** If an external system or administrator modifies the database without going through Django.
+
+If the validation layer is successfully bypassed, only the database's `NOT NULL` constraint (derived from `null=False`) can prevent bad data from being saved, raising an **`IntegrityError`**.
+
+---
+
+### The Model's Role
+
+The Django **Model** is the one place where both levels intersect. When you define a field:
+
+1.  **`blank=True/False`** is stored as a Python attribute that Django uses for **form/serializer validation**.
+2.  **`null=True/False`** is used by Django's migration system to generate the **SQL `CREATE TABLE`** statement, setting the physical constraint on the database column.
+
+---
+
+## `Recursive relations` and `related names`
+
+It's a topic central to advanced data modeling in Django\! When instances of a single model are related to each other, you are dealing with a **Recursive Relationship**.
+
+### 🔄 Recursive Relationships
+
+A recursive relationship occurs when a model has a **ForeignKey** or **ManyToManyField** that points back to **itself**. This is used to model hierarchical or self-referential data structures.
+
+#### Example: The `Employee` Model
+
+The most common example is an organizational hierarchy where every employee (except the CEO) reports to a single manager, and that manager is also an employee.
+
+```python
+from django.db import models
+
+class Employee(models.Model):
+    name = models.CharField(max_length=100)
+    # The ForeignKey points back to the Employee model itself.
+    # A Manager is simply another instance of an Employee.
+    manager = models.ForeignKey(
+        'self', # This indicates the relationship is recursive
+        on_delete=models.SET_NULL, # If the manager is deleted, set this employee's manager field to NULL
+        null=True,
+        blank=True,
+        related_name='reports' # The related_name is essential here!
+    )
+
+    def __str__(self):
+        return self.name
+```
+
+In this model:
+
+- **`'self'`**: This special string is used in the `ForeignKey` definition to indicate that the model is relating to itself.
+- **`manager`**: This is the **forward relation**. It allows you to find an employee's boss: `employee.manager`.
+
+### 🏷️ The Role of `related_name`
+
+The `related_name` is an **absolutely critical** argument for any recursive relationship.
+
+#### Why It's Needed
+
+In Django, when you define a `ForeignKey` on a model, Django automatically creates a **reverse relationship** on the linked model.
+
+- If you had a `Book` model linked to a `Publisher` model, you could find a book's publisher (`book.publisher`), and Django lets you find all books for a publisher (`publisher.book_set.all()`). The reverse name is `book_set`.
+
+In a recursive relationship, the model is its own related model. Without `related_name`, Django would try to create the same default reverse name (`employee_set`) twice, leading to a **conflict and an error**.
+
+### How `related_name='reports'` Works
+
+By setting `related_name='reports'` on the `manager` field, you define what the reverse relationship should be called on the `Employee` model:
+
+- **Forward Relation (Boss):** You look up an employee's boss using the field name:
+
+  ```python
+  >>> alice.manager
+  <Employee: Bob>
+  ```
+
+- **Reverse Relation (Subordinates):** You look up all employees reporting to a manager using the `related_name`:
+
+  ```python
+  >>> bob.reports.all()
+  # Returns a QuerySet of all Employee instances whose 'manager' field is Bob.
+  [<Employee: Alice>, <Employee: Charlie>]
+  ```
+
+---
+
+### 🌳 Another Example: Hierarchical Data
+
+This pattern is also often used for simple hierarchical structures like categories:
+
+```python
+class Category(models.Model):
+    name = models.CharField(max_length=50)
+    parent = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='children' # 'children' is the reverse name
+    )
+```
+
+| Relation    | Code                      | Description                         |
+| :---------- | :------------------------ | :---------------------------------- |
+| **Forward** | `category.parent`         | Gets the immediate parent category. |
+| **Reverse** | `category.children.all()` | Gets all immediate sub-categories.  |
+
+---
+
+## Custom Field Validation in Django ORM
+
+You can enforce complex, application-specific rules—like requiring only even numbers—by adding a **validator** to your model field.
+
+---
+
+Custom validation in Django is primarily achieved using **Validator** functions. A validator is a simple function or class that takes a value and either returns nothing (if the value is valid) or raises a `ValidationError` (if the value is invalid).
+
+This validation is run automatically by Django in all high-level data entry contexts (like forms, the Admin, and DRF serializers).
+
+### 1\. Defining the Validator Function
+
+First, you define a Python function that implements your specific logic.
+
+```python
+from django.core.exceptions import ValidationError
+
+def validate_even(value):
+    """Checks if the given integer value is even."""
+    if value % 2 != 0:
+        # Raises a ValidationError with a helpful message
+        raise ValidationError(
+            f'{value} is not an even number',
+            code='odd_number_error'
+        )
+```
+
+- **`ValidationError`**: This is the key. Raising this exception is how Django's validation system knows the check has failed.
+- **`gettext_lazy as _`**: This is used for easy translation of your error message if your application supports multiple languages.
+
+---
+
+### 2\. Attaching the Validator to the Model Field
+
+Next, you attach this function to your model field using the **`validators`** argument.
+
+```python
+from django.db import models
+from .validators import validate_even # Assuming you put the function in a file called validators.py
+
+class Product(models.Model):
+    name = models.CharField(max_length=100)
+    inventory_count = models.IntegerField(
+        # Attach the custom validator function here
+        validators=[validate_even],
+        default=0,
+    )
+    price = models.DecimalField(max_digits=6, decimal_places=2)
+
+    def __str__(self):
+        return self.name
+```
+
+---
+
+### 3\. How the Validation Runs
+
+Once the validator is attached, it is integrated into Django's validation pipeline.
+
+| Input Method        | Validation Behavior                                                                                                                                                                                            |
+| :------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Django Admin**    | When you try to save a product with an odd `inventory_count`, the Admin form immediately shows the `ValidationError` message ("3 is not an even number") and prevents the save.                                |
+| **DRF Serializers** | When an API receives a payload with an odd number, the serializer's `is_valid()` method returns `False` and includes the validation error in its `.errors` dictionary, sending a **400 Bad Request** response. |
+| **Model Instance**  | If you create or update an instance in the shell, you must manually call `product.full_clean()` to run all model and field validators: `product.full_clean()` will raise a `ValidationError`.                  |
+
+### 🚨 Critical Note: Database Integrity vs. Application Validation
+
+Remember the difference between validation and database integrity:
+
+- **Custom validators (`validate_even`)** are part of the **Validation Level** (application logic). They are run by forms and serializers.
+- If you **bypass** forms/serializers (e.g., using `Product.objects.create(inventory_count=5)`) and do **not** call `full_clean()`, the validator is skipped, and the odd number will be saved to the database.
+
+**Custom field validators do not affect the database schema** and do not prevent non-compliant data from being saved via low-level ORM or SQL operations. They are a feature of the application layer to enforce business rules where the user interacts with the system.
+
+---
+
+## Note: Model `Meta` class
+
+The **Model `Meta` class** is an inner class you define inside your Django model to hold **metadata**—data about your model that is not related to any of its fields. This metadata is used to control things like database table names, ordering, permissions, and single/plural names in the Django Admin.
+
+---
+
+### Where to Define the `Meta` Class
+
+You define the `Meta` class as a straightforward inner class within your model definition:
+
+```python
+from django.db import models
+
+class Article(models.Model):
+    title = models.CharField(max_length=200)
+    pub_date = models.DateField()
+
+    class Meta:
+        # All meta options go here as class attributes
+        ordering = ['-pub_date']
+        verbose_name_plural = "articles"
+```
+
+---
+
+### Key Model `Meta` Options
+
+Here are the most common and important options you'll use:
+
+#### 1\. Naming and Display
+
+| Option                    | Type   | Description                                                                                                                         |
+| :------------------------ | :----- | :---------------------------------------------------------------------------------------------------------------------------------- |
+| **`verbose_name`**        | String | A human-readable singular name for the object (e.g., "Post"). Used in the Admin and documentation.                                  |
+| **`verbose_name_plural`** | String | A human-readable plural name (e.g., "Posts"). **Crucial** for correct display in the Admin.                                         |
+| **`db_table`**            | String | The explicit name for the database table (e.g., `'blog_posts'`). If omitted, Django generates a default name (`appname_modelname`). |
+
+### 2\. Ordering and Structure
+
+(You can set the default ordering of your model results in the inner Meta class or specify ordering dynamically when querying data using methods like order_by().)
+
+| Option                | Type            | Description                                                                                                                                                        |
+| :-------------------- | :-------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`ordering`**        | List/Tuple      | A list of field names that defines the default sorting for any QuerySet returned for this model. Use a hyphen (`-`) prefix for descending order.                   |
+| **`unique_together`** | Tuple of Tuples | Enforces that a combination of fields must be unique together (e.g., a user can only review a product once). Applied at the database level as a unique constraint. |
+| **`get_latest_by`**   | String          | Specifies the field to use when calling `Model.objects.latest()`. Typically a `DateField` or `DateTimeField`.                                                      |
+
+**Example of Ordering and Unique Together:**
+
+```python
+class Review(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    rating = models.IntegerField()
+    review_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # Default sorting by rating (highest first), then by date
+        ordering = ['-rating', 'review_date']
+        # A user can only submit one review per product
+        unique_together = [['user', 'product']]
+```
+
+### 3\. Permissions
+
+| Option            | Type           | Description                                                                                                     |
+| :---------------- | :------------- | :-------------------------------------------------------------------------------------------------------------- |
+| **`permissions`** | List of Tuples | Defines extra, non-standard permissions for the model beyond the default `add`, `change`, `delete`, and `view`. |
+
+**Example of Permissions:**
+
+```python
+class Meta:
+    permissions = [
+        ("can_publish", "Can mark article as published"),
+        ("can_review", "Can review submitted articles"),
+    ]
+```
+
+These permissions are then usable by the Admin and the Django authorization system.
+
+---
+
+The `Meta` class is a powerful way to decouple configuration from data definition, making your models cleaner and more descriptive.
+
+---
+
+## Model managers
+
+Model managers are Django's interface for **database query operations**. 💻
+
+They are used to:
+
+1.  Provide the methods (like `all()`, `filter()`, `get()`) used to retrieve objects from the database.
+2.  Define **custom QuerySet methods** or modify the initial QuerySet (e.g., hiding soft-deleted objects by default).
+
+Every Django model automatically gets a manager named **`objects`**. If you define a custom manager, you assign it to a field in your model, typically replacing or supplementing the default `objects` manager.
+
+**In short: A manager is how Django talks to the database, acting as a gateway for fetching and creating objects.**
+
+---
+
+## Custom model fields
+
+Writing custom model fields in Django is the process of creating a reusable class to handle unique data types or behaviors that aren't covered by Django's built-in fields (like `CharField` or `IntegerField`).
+
+---
+
+### Custom Field Summary
+
+A custom field is essentially a Python class that inherits from `django.db.models.Field` (or a subclass like `CharField`) and handles four key stages of data:
+
+1.  **Python Value:** How the data is represented in your Python code (e.g., a custom object or dictionary).
+2.  **Database Storage:** How the data is stored in the database (e.g., as a string, integer, or JSON).
+3.  **Serialization:** How the data is converted to and from JSON/XML for use in forms and APIs.
+4.  **Form Input:** How the field is displayed in forms (often requiring a custom form widget).
+
+#### Key Methods to Override:
+
+- **`__init__`**: Sets up any custom arguments for the field.
+- **`db_type`**: Tells Django what SQL column type to use (e.g., `'varchar(100)'` or `'jsonb'`).
+- **`from_db_value`**: Converts the value coming **from the database** (e.g., a raw string) into the Python object you want to use.
+- **`to_python`**: Converts any value (including user input or a value from a fixture) into the correct Python type.
+- **`get_prep_value`**: Converts the Python value into a format ready to be sent to the **database query**.
+
+In short, custom fields let you **abstract complex data handling** into a simple, reusable model declaration.
+
+---
+
+## Model methods
+
+Model methods are **Python functions defined inside your Django model class** that allow you to encapsulate business logic related to a specific model instance. They operate on the data held by that instance.
+
+---
+
+### 💻 Two Types of Model Methods
+
+#### 1\. Custom Methods (Business Logic)
+
+These are methods you create yourself to perform specific actions or calculations related to the model's data.
+
+**Example:** Calculating an item's current price, checking an article's publication status, or counting a user's total orders.
+
+```python
+class Item(models.Model):
+    name = models.CharField(max_length=100)
+    base_price = models.DecimalField(max_digits=6, decimal_places=2)
+    discount = models.DecimalField(max_digits=4, decimal_places=2, default=0.0)
+
+    def calculate_current_price(self):
+        """Calculates price after applying the discount."""
+        discount_amount = self.base_price * self.discount
+        return self.base_price - discount_amount
+```
+
+#### 2\. Overridden Methods (Django Conventions)
+
+These are standard methods inherited from Django's base `Model` class that you redefine to inject your own logic at specific points in the object's lifecycle.
+
+The most common overridden methods are:
+
+- **`__str__`**: Defines the human-readable string representation of the object.
+- **`save()`**: Allows you to perform actions _before_ or _after_ the object is saved to the database.
+- **`delete()`**: Allows you to perform actions _before_ or _after_ the object is deleted from the database.
+
+---
+
+#### ✍️ Example: Overriding `__str__`
+
+The `__str__` method is the most important method to override. It controls what is displayed when the object is printed, viewed in the Django shell, or shown in the **Django Admin** interface (where it's used in drop-down menus and object lists).
+
+If you don't override it, Django simply displays a generic and unhelpful output like `<Item object (1)>`.
+
+#### Implementation:
+
+```python
+class Item(models.Model):
+    name = models.CharField(max_length=100)
+    base_price = models.DecimalField(max_digits=6, decimal_places=2)
+    # ... other fields and methods
+
+    def __str__(self):
+        """Returns the human-readable string representation."""
+        # This makes it easy to identify the instance by its name
+        return self.name
+```
+
+#### Result:
+
+| Context          | Without `__str__`                                   | With `__str__`                                          |
+| :--------------- | :-------------------------------------------------- | :------------------------------------------------------ |
+| **Python Shell** | `>>> Item.objects.get(pk=1)`<br>`<Item object (1)>` | `>>> Item.objects.get(pk=1)`<br>`<Item object: Laptop>` |
+| **Django Admin** | Object list displays "Item object (1)"              | Object list displays "Laptop"                           |
+
+---
+
+## Models Inheritance and Abstract Base Classes
+
+Model inheritance in Django lets you reuse common code and structure across multiple models. It's built on standard Python class inheritance, but Django models specifically use three main styles: **Abstract Base Classes**, **Multi-table Inheritance**, and **Proxy Models**.
+
+---
+
+### Abstract Base Classes (ABC)
+
+Abstract Base Classes are the **recommended** way to reuse fields and methods across models.
+
+- **What it is:** A base class where you define common fields (like `created_at`, `updated_at`, or `is_active`). Django **does not create a database table** for the abstract class itself.
+- **How it works:** When a child model inherits from the ABC, all the fields and methods from the ABC are copied into the child model's database table definition.
+- **Defining it:** You set the `abstract = True` option in the inner `Meta` class.
+
+#### Example
+
+```python
+class TimeStampedModel(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True # ⬅️ Makes it an ABC (no database table)
+
+class Post(TimeStampedModel):
+    title = models.CharField(max_length=200)
+    # Post table gets 'id', 'title', 'created_at', and 'updated_at'
+```
+
+---
+
+### Multi-table Inheritance
+
+This style is used when each model **must have its own database table**, but the tables have a one-to-one link.
+
+- **What it is:** A child model inherits from a concrete (non-abstract) parent model. Django creates a separate table for the child, which includes a hidden **OneToOneField** linking back to the parent's table.
+- **How it works:** Accessing fields defined on the parent requires a **database JOIN**. This is necessary when modeling a stricter "is-a" relationship (e.g., a `Place` is a `Restaurant`).
+- **Defining it:** You simply inherit from a standard `models.Model` class.
+
+---
+
+### Proxy Models
+
+Proxy models are used when you want to change the **Python behavior** of a model (e.g., adding custom methods or a default manager) **without changing its database structure**.
+
+- **What it is:** The proxy model shares the exact same database table as its parent model. No new table is created.
+- **How it works:** You can query objects using either the parent model or the proxy model, but the proxy model gives you access to the custom logic you defined.
+- **Defining it:** You set the `proxy = True` option in the inner `Meta` class.
+
+**In brief:**
+
+- **Abstract Base Classes (ABC):** Recommended for **reusing code/fields** without creating extra tables.
+- **Multi-table Inheritance:** Necessary for a true database-level "is-a" relationship (creates multiple tables).
+- **Proxy Models:** For adding **Python-only behavior** (methods, managers) to an existing model (creates zero new tables).
+
+---
+
+## Multiple inheritance
+
+Multiple inheritance in Django models works just like Python's multiple inheritance, allowing a model to inherit features from several parent classes. However, when dealing with Django models, you need to be careful about the inheritance style of the parents.
+
+---
+
+### How Multiple Inheritance Works
+
+When a Django model inherits from multiple classes, the framework processes the fields and methods from each parent using Python's **Method Resolution Order (MRO)** rules.
+
+The key distinction is based on the type of parent model:
+
+#### 1\. Inheriting from Multiple Abstract Base Classes (Recommended)
+
+This is the standard and safest way to use multiple inheritance in Django.
+
+- **Behavior:** The child model copies fields and methods from **all** abstract parent classes. Since Abstract Base Classes (ABCs) don't create their own tables, there are no database conflicts.
+- **Use Case:** Combining mixins or traits, such as combining `TimeStampedModel` (for `created_at`/`updated_at`) and a `PublishableModel` (for `is_published`/`published_date`).
+- **Example:**
+
+<!-- end list -->
+
+```python
+class PublishableModel(models.Model):
+    is_published = models.BooleanField(default=False)
+    class Meta:
+        abstract = True
+
+class Article(TimeStampedModel, PublishableModel):
+    title = models.CharField(max_length=200)
+    # Article gets fields from both ABCs (created_at, updated_at, is_published)
+```
+
+#### 2\. Inheriting from Multiple Concrete Models (Highly Discouraged)
+
+This is technically possible, but it's rarely used and creates complex relationships.
+
+- **Behavior:** Django attempts to create multiple **hidden `OneToOneField` relations** from the child model's table to _each_ concrete parent model's table.
+- **Problem:** This often leads to ambiguity regarding the model's primary key (PK) and complex MRO resolution, making the model hard to query and maintain. Django generally favors **Multi-table Inheritance** from only a single concrete parent.
+
+**In summary:** When using multiple inheritance with Django models, **stick to inheriting from one or more Abstract Base Classes** to aggregate features without creating complex or redundant database tables.
+
+---
