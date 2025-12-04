@@ -270,6 +270,530 @@ You now have a fully functional custom user model using `email` for authenticati
 
 ## Explanations (as Questions and Answers):
 
+Our custom user model inherits from AbstractBaseUser and PermissionsMixin. I'll provide to you with the source code of these two classes and metion what we should note about them.
+
+This is the source code for `AbstractBaseUser`:
+
+```python
+class AbstractBaseUser(models.Model):
+    password = models.CharField(_("password"), max_length=128)
+    last_login = models.DateTimeField(_("last login"), blank=True, null=True)
+
+    is_active = True
+
+    REQUIRED_FIELDS = []
+
+    # Stores the raw password if set_password() is called so that it can
+    # be passed to password_changed() after the model is saved.
+    _password = None
+
+    class Meta:
+        abstract = True
+
+    def __str__(self):
+        return self.get_username()
+
+    def save(self, **kwargs):
+        super().save(**kwargs)
+        if self._password is not None:
+            password_validation.password_changed(self._password, self)
+            self._password = None
+
+    def get_username(self):
+        """Return the username for this User."""
+        return getattr(self, self.USERNAME_FIELD)
+
+    def clean(self):
+        setattr(self, self.USERNAME_FIELD, self.normalize_username(self.get_username()))
+
+    def natural_key(self):
+        return (self.get_username(),)
+
+    @property
+    def is_anonymous(self):
+        """
+        Always return False. This is a way of comparing User objects to
+        anonymous users.
+        """
+        return False
+
+    @property
+    def is_authenticated(self):
+        """
+        Always return True. This is a way to tell if the user has been
+        authenticated in templates.
+        """
+        return True
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+        self._password = raw_password
+
+    def check_password(self, raw_password):
+        """
+        Returns a boolean of whether the raw_password was correct. Handles
+        hashing formats behind the scenes.
+        """
+
+        def setter(raw_password):
+            self.set_password(raw_password)
+            # Password hash upgrades shouldn't be considered password changes.
+            self._password = None
+            self.save(update_fields=["password"])
+
+        return check_password(raw_password, self.password, setter)
+
+    async def acheck_password(self, raw_password):
+        """See check_password()."""
+
+        async def setter(raw_password):
+            self.set_password(raw_password)
+            # Password hash upgrades shouldn't be considered password changes.
+            self._password = None
+            await self.asave(update_fields=["password"])
+
+        return await acheck_password(raw_password, self.password, setter)
+
+    def set_unusable_password(self):
+        # Set a value that will never be a valid hash
+        self.password = make_password(None)
+
+    def has_usable_password(self):
+        """
+        Return False if set_unusable_password() has been called for this user.
+        """
+        return is_password_usable(self.password)
+
+    def get_session_auth_hash(self):
+        """
+        Return an HMAC of the password field.
+        """
+        return self._get_session_auth_hash()
+
+    def get_session_auth_fallback_hash(self):
+        for fallback_secret in settings.SECRET_KEY_FALLBACKS:
+            yield self._get_session_auth_hash(secret=fallback_secret)
+
+    def _get_session_auth_hash(self, secret=None):
+        key_salt = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
+        return salted_hmac(
+            key_salt,
+            self.password,
+            secret=secret,
+            algorithm="sha256",
+        ).hexdigest()
+
+    @classmethod
+    def get_email_field_name(cls):
+        try:
+            return cls.EMAIL_FIELD
+        except AttributeError:
+            return "email"
+
+    @classmethod
+    def normalize_username(cls, username):
+        return (
+            unicodedata.normalize("NFKC", username)
+            if isinstance(username, str)
+            else username
+        )
+```
+
+Here are the most important parts of the above source code:
+
+1. `password` and `last_login` fields are defined here so in our custom User model, we don't need to define them, we just inherit them:
+
+```python
+password = models.CharField(_("password"), max_length=128)
+last_login = models.DateTimeField(_("last login"), blank=True, null=True)
+```
+
+2. As you see the REQUIRED_FIELDS attribute is set to an empty list by default:
+
+```python
+REQUIRED_FIELDS = []
+```
+
+So we need to override this attribute in our custom User model and provide the required fields that are prompted for when creating a user via 'createsuperuser'. Note that we don't need to include the unique identifier for authentication field (which is set by `USERNAME_FIELD` attribute, the `email` field in our case) and the password field in `REQUIRED_FIELDS` attribute. Django will ask for them automatically when creating a user via 'createsuperuser'.  
+3. We need to set the `USERNAME_FIELD` attribute to `"email"` because the `get_username` method always uses this attribute to return what field is used as the unique identifier for authentication.
+
+```python
+def get_username(self):
+    """Return the username for this User."""
+    return getattr(self, self.USERNAME_FIELD)
+```
+
+4. The useful `set_password` method is provided here which receives the raw password, hashes it and adds the hashed password in the password field of User object (it also adds the raw password to `_password` attribute):
+
+```python
+def set_password(self, raw_password):
+    self.password = make_password(raw_password)
+    self._password = raw_password
+```
+
+We also have another useful method named `check_password` which recieves a raw password and compares it with hashed password stored in password field:
+
+```python
+def check_password(self, raw_password):
+    """
+    Returns a boolean of whether the raw_password was correct. Handles
+    hashing formats behind the scenes.
+    """
+
+    def setter(raw_password):
+        self.set_password(raw_password)
+        # Password hash upgrades shouldn't be considered password changes.
+        self._password = None
+        self.save(update_fields=["password"])
+
+    return check_password(raw_password, self.password, setter)
+```
+
+## Question:
+
+In `BaseUserManager` we have this normal attribute:
+
+```python
+is_active = True
+```
+
+And in my custom User model we have this:
+
+```python
+is_active = models.BooleanField(default=True)
+```
+
+What is the difference between them? And in general what is the difference between a normal attribute and an attribute defined using models.SOMEField?
+
+## Answer:
+
+The two declarations for `is_active` serve **completely different purposes**, reflecting the difference between a Python class attribute and a Django database field.
+
+### 1. The `BaseUserManager` Attribute (`is_active = True`)
+
+The `is_active = True` attribute you see in the `AbstractBaseUser` source code is a **static Python class attribute** used for **internal logic and consistency**.
+
+- **Location:** Inside `AbstractBaseUser` (which your `User` model inherits).
+- **Purpose:** It acts as a **default class-level property** for methods like `is_authenticated` and `is_anonymous`, which are also defined in `AbstractBaseUser`.
+  - **Crucially, this is NOT a database field.**
+  - Since `is_active` must be present on all concrete user models (it's required by Django's authentication system), the base class provides a default value to ensure these property methods work correctly right out of the box, even before any specific fields are defined.
+
+### 2. The Custom User Model Field (`is_active = models.BooleanField(...)`)
+
+The definition in your custom `User` model creates the actual **database column** and is the value Django's authentication system ultimately reads.
+
+- **Location:** Inside your custom `User` model.
+- **Purpose:** It defines a **database column**.
+  - It tells Django's ORM: "Create a boolean column named `is_active` in the database table."
+  - The `default=True` argument ensures that every time a new user object is saved to the database (and you don't provide a value), the database sets the initial value for that column to `True`.
+
+### Summary of the Difference
+
+| Attribute       | `is_active = True` (in `AbstractBaseUser`)                                     | `is_active = models.BooleanField(default=True)` (in `User` model) |
+| :-------------- | :----------------------------------------------------------------------------- | :---------------------------------------------------------------- |
+| **Type**        | Static Python Class Attribute                                                  | Django Model Field (Database Column)                              |
+| **Persistence** | **Non-Persistent:** Exists only in Python memory.                              | **Persistent:** Creates a column in the database.                 |
+| **Usage**       | Used by base class methods (like `is_authenticated`) for internal consistency. | Stores the actual, mutable state of the user account.             |
+
+---
+
+### The General Difference: Normal Attributes vs. `models.Field`
+
+The distinction between a normal attribute and a `models.Field` is one of the most fundamental concepts in Django.
+
+#### A. Normal Attributes (Pure Python)
+
+A normal class attribute (e.g., `MY_CONSTANT = 10`) or an instance attribute set in `__init__` or a method is **pure Python code**.
+
+- **They are NOT** automatically saved to the database.
+- **They are NOT** visible in Django Admin unless explicitly added.
+- **They are NOT** handled by the ORM (Django's database layer).
+- **Use Cases:** Storing constants, internal flags, or temporary calculation results on the Python object.
+
+#### B. `models.Field` (ORM-Managed)
+
+When you define an attribute as `models.CharField`, `models.BooleanField`, etc., you are using Django's **Object-Relational Mapper (ORM)**.
+
+- **They ARE** automatically saved to and loaded from the database via SQL.
+- **They ARE** automatically included in `makemigrations`.
+- **They ARE** the entire structure Django uses to generate your database schema.
+- **Use Cases:** Defining persistent, structured data for your application (e.g., `email`, `created_at`, `is_staff`).
+
+In the case of `is_active`, the one in the base class is a placeholder for consistency, but the one you define is the real, functional database column. By defining the `models.BooleanField` in your `User` class, you **override** the non-persistent class attribute from `AbstractBaseUser` with a persistent database field.
+
+## Question:
+
+In this line from `AbstractBaseUser` source code:
+
+```python
+password = models.CharField(_("password"), max_length=128)
+```
+
+Why it has provided a string for the field as `_("password")`? I never used a string in my models fields.
+
+## Answer:
+
+The line `password = models.CharField(_("password"), max_length=128)` uses two related concepts that are crucial for high-quality, reusable Django code: the **verbose name** and **internationalization (i18n)**.
+
+Here is the breakdown of the string `_("password")`:
+
+### 1. The Purpose of the String: `verbose_name`
+
+The first positional argument passed to any Django field is its **`verbose_name`**.
+
+- **Your Code:** You likely omitted the `verbose_name` (e.g., `email = models.EmailField(unique=True)`). When you omit it, Django automatically derives the verbose name from the field's attribute name. For your `email` field, the verbose name defaults to **"email"**.
+- **Django Source Code:** In the `AbstractBaseUser` source, the string `"password"` explicitly sets the field's verbose name to "password". This name is used by:
+  - The **Django Admin site** (as the column header).
+  - **Form/Serializer field labels** (if not explicitly customized).
+  - **Error messages** (e.g., "The field **password** is required.").
+
+### 2. The Meaning of `_()`: Internationalization
+
+The unusual part is the function wrapping the string: **`_("password")`**.
+
+The underscore `_()` is an alias for Django's translation function (`gettext` or `gettext_lazy`).
+
+- **What it does:** Wrapping a string in `_()` marks that string as translatable. When a user accesses the site in a different language (e.g., Spanish), Django's translation system looks up the string `"password"` in its Spanish translation file (`.po` file) and renders the text as "contraseña."
+- **Why Django Uses It:** Since the built-in `User` model is part of the Django framework and must support all languages, every user-facing string (like field names and error messages) must be marked for translation.
+
+In summary, the line means:
+
+> "Create a `CharField` for the database, set its maximum length to 128, and use the translatable string **'password'** as its human-readable name (verbose name)."
+
+You don't typically need to use `_("...")` in your own models unless you plan to translate your application into multiple languages. If you were building a production application for a global audience, you should adopt this practice for all your model fields.
+
+## Question:
+
+The `last_login` field is defined in `AbstractBaseUser`:
+
+```python
+last_login = models.DateTimeField(_("last login"), blank=True, null=True)
+```
+
+But I don't see the logic to automatically update this field whenever a user logs in. I think the logic must exist in `Model` class that the `AbstractBaseUser` inherits from?
+
+## Answer:
+
+You are correct that the logic to update `last_login` is not defined in the `AbstractBaseUser` model itself, nor is it in the base `Model` class.
+
+Instead, the logic is implemented via a **Django signal** that listens for a successful login event.
+
+### The Mechanism: The `user_logged_in` Signal
+
+Django's authentication system uses a **signal/receiver pattern** to automatically update the `last_login` field:
+
+#### 1\. The Signal Emitter
+
+When a user successfully authenticates (usually by calling `django.contrib.auth.authenticate` and then `login` in a view), Django's authentication app internally executes the following:
+
+```python
+# Internal Django code executed upon successful login
+from django.contrib.auth.signals import user_logged_in
+user_logged_in.send(sender=user.__class__, request=request, user=user)
+```
+
+This line **emits** the `user_logged_in` signal.
+
+#### 2\. The Signal Receiver
+
+The logic to update the timestamp is located in a **receiver function** that is automatically connected to the `user_logged_in` signal. This receiver is part of the `django.contrib.auth` app and is called **`update_last_login`**.
+
+The receiver function performs two key steps:
+
+1.  It checks if the user's `last_login` field needs updating (i.e., if the user object has the field).
+2.  If so, it updates the field to the current time (`timezone.now()`) and saves the user object to the database using an `update_fields` optimization (to only save the `last_login` field).
+
+### Summary
+
+The process ensures that the `last_login` field is updated **outside of the model's logic** (`save()`, etc.) and instead happens as a **side effect** of the authentication process.
+
+This design keeps the core `User` model clean and decouples the field definition from the update logic, making the authentication system modular and extensible.
+
+##
+
+---
+
+---
+
+---
+
+---
+
+And this is the source code for `PermissionsMixin`:
+
+```python
+class PermissionsMixin(models.Model):
+    """
+    Add the fields and methods necessary to support the Group and Permission
+    models using the ModelBackend.
+    """
+
+    is_superuser = models.BooleanField(
+        _("superuser status"),
+        default=False,
+        help_text=_(
+            "Designates that this user has all permissions without "
+            "explicitly assigning them."
+        ),
+    )
+    groups = models.ManyToManyField(
+        Group,
+        verbose_name=_("groups"),
+        blank=True,
+        help_text=_(
+            "The groups this user belongs to. A user will get all permissions "
+            "granted to each of their groups."
+        ),
+        related_name="user_set",
+        related_query_name="user",
+    )
+    user_permissions = models.ManyToManyField(
+        Permission,
+        verbose_name=_("user permissions"),
+        blank=True,
+        help_text=_("Specific permissions for this user."),
+        related_name="user_set",
+        related_query_name="user",
+    )
+
+    class Meta:
+        abstract = True
+
+    def get_user_permissions(self, obj=None):
+        """
+        Return a list of permission strings that this user has directly.
+        Query all available auth backends. If an object is passed in,
+        return only permissions matching this object.
+        """
+        return _user_get_permissions(self, obj, "user")
+
+    async def aget_user_permissions(self, obj=None):
+        """See get_user_permissions()"""
+        return await _auser_get_permissions(self, obj, "user")
+
+    def get_group_permissions(self, obj=None):
+        """
+        Return a list of permission strings that this user has through their
+        groups. Query all available auth backends. If an object is passed in,
+        return only permissions matching this object.
+        """
+        return _user_get_permissions(self, obj, "group")
+
+    async def aget_group_permissions(self, obj=None):
+        """See get_group_permissions()"""
+        return await _auser_get_permissions(self, obj, "group")
+
+    def get_all_permissions(self, obj=None):
+        return _user_get_permissions(self, obj, "all")
+
+    async def aget_all_permissions(self, obj=None):
+        return await _auser_get_permissions(self, obj, "all")
+
+    def has_perm(self, perm, obj=None):
+        """
+        Return True if the user has the specified permission. Query all
+        available auth backends, but return immediately if any backend returns
+        True. Thus, a user who has permission from a single auth backend is
+        assumed to have permission in general. If an object is provided, check
+        permissions for that object.
+        """
+        # Active superusers have all permissions.
+        if self.is_active and self.is_superuser:
+            return True
+
+        # Otherwise we need to check the backends.
+        return _user_has_perm(self, perm, obj)
+
+    async def ahas_perm(self, perm, obj=None):
+        """See has_perm()"""
+        # Active superusers have all permissions.
+        if self.is_active and self.is_superuser:
+            return True
+
+        # Otherwise we need to check the backends.
+        return await _auser_has_perm(self, perm, obj)
+
+    def has_perms(self, perm_list, obj=None):
+        """
+        Return True if the user has each of the specified permissions. If
+        object is passed, check if the user has all required perms for it.
+        """
+        if not isinstance(perm_list, Iterable) or isinstance(perm_list, str):
+            raise ValueError("perm_list must be an iterable of permissions.")
+        return all(self.has_perm(perm, obj) for perm in perm_list)
+
+    async def ahas_perms(self, perm_list, obj=None):
+        """See has_perms()"""
+        if not isinstance(perm_list, Iterable) or isinstance(perm_list, str):
+            raise ValueError("perm_list must be an iterable of permissions.")
+        for perm in perm_list:
+            if not await self.ahas_perm(perm, obj):
+                return False
+        return True
+
+    def has_module_perms(self, app_label):
+        """
+        Return True if the user has any permissions in the given app label.
+        Use similar logic as has_perm(), above.
+        """
+        # Active superusers have all permissions.
+        if self.is_active and self.is_superuser:
+            return True
+
+        return _user_has_module_perms(self, app_label)
+
+    async def ahas_module_perms(self, app_label):
+        """See has_module_perms()"""
+        # Active superusers have all permissions.
+        if self.is_active and self.is_superuser:
+            return True
+
+        return await _auser_has_module_perms(self, app_label)
+```
+
+The only note I want you to pay attention to is that this mixin adds a `is_superuser` database field.
+
+---
+
+---
+
+---
+
+This is the source code for `BaseUserManager`:
+
+```python
+class BaseUserManager(models.Manager):
+    @classmethod
+    def normalize_email(cls, email):
+        """
+        Normalize the email address by lowercasing the domain part of it.
+        """
+        email = email or ""
+        try:
+            email_name, domain_part = email.strip().rsplit("@", 1)
+        except ValueError:
+            pass
+        else:
+            email = email_name + "@" + domain_part.lower()
+        return email
+
+    def get_by_natural_key(self, username):
+        return self.get(**{self.model.USERNAME_FIELD: username})
+
+    async def aget_by_natural_key(self, username):
+        return await self.aget(**{self.model.USERNAME_FIELD: username})
+```
+
+Here the most important note I want you to pay attention to is that this `BaseUserManager` is quite simple and the most important method it provides for us is `normalize_email` which normalizes the email address by lowercasing the domain part of it.
+
+---
+
+---
+
+---
+
+---
+
 ### Question:
 
 For our custom user model, we inherited from `AbstractBaseUser`. Why do we need to inherit from it?
@@ -428,7 +952,7 @@ A few questions about the `REQUIRED_FIELDS` setting:
 
 ### Question 1:
 
-What Happens If I Comment This Out?
+What happens if I comment this `REQUIRED\_FIELDS = ["first\_name", "last\_name"]` out?
 
 ### Answer:
 
@@ -940,7 +1464,7 @@ The serializer object acts as a central **data transformer and validator**, and 
 | **PUT (Full Update)**      | `Serializer(instance, data=request.data)`               | **Instance** and **`data`**.                      | Runs validation; on `.save()`, calls the internal **`update()`** method. Requires all required fields in the data.          |
 | **PATCH (Partial Update)** | `Serializer(instance, data=request.data, partial=True)` | **Instance**, **`data`**, and **`partial=True`**. | Runs validation; on `.save()`, calls the internal **`update()`** method. Only requires fields that are present in the data. |
 
-### Key Takeaways
+#### Key Takeaways
 
 1.  **Read Mode vs. Write Mode:**
 
