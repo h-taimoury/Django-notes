@@ -18,7 +18,7 @@ pip install drf-spectacular
 
 ### Step 2: Configure `settings.py`
 
-Add `drf_spectacular` to your `INSTALLED_APPS` in your project's `settings.py` file:
+Add `drf_spectacular` to your `INSTALLED_APPS` in your project's `settings.py` file and also register spectacular AutoSchema with DRF:
 
 ```python
 # settings.py
@@ -29,13 +29,20 @@ INSTALLED_APPS = [
     # ...
     'rest_framework',
     'drf_spectacular',  # <-- Add this
-    'blog', # Your app name
+    'users',
+    'posts',
 ]
+
+REST_FRAMEWORK = {
+    # YOUR SETTINGS
+    # Add this 👇:
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
 
 # OPTIONAL: Add configuration settings for spectacular
 # This is usually not required but can be helpful for branding/metadata
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Your Blog API',
+    'TITLE': 'My Blog API',
     'DESCRIPTION': 'Detailed documentation for the Blog REST API',
     'VERSION': '1.0.0',
     # This setting tells Spectacular where to find the API schema generation logic
