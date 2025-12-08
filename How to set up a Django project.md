@@ -1091,7 +1091,7 @@ pip install djangorestframework-simplejwt
 
 Then, your django project must be configured to use the library. In settings.py, add rest_framework_simplejwt.authentication.JWTAuthentication to the tuple of authentication classes:
 
-```
+```python
 # This is for Django project to be configured to use 'Simple JWT' auth library.
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -1277,8 +1277,6 @@ SIMPLE_JWT = {
     # The refresh token lifetime will remain at the default (1 day)
 }
 ```
-
-Note: The imports don't have to be at the top of files.
 
 **Testing the Change:**
 
