@@ -474,6 +474,25 @@ Poly.objects.all()
 
 Your analogy is spot on\! This capability is what makes polymorphic models powerful for centralized data management where the items are structurally diverse.
 
+## Note
+
+When you include a Django model relationship field in the `fields` list of a **`ModelSerializer` without defining an explicit field type** (like `SlugRelatedField` or a nested serializer), Django REST Framework applies its default behavior, which is optimized for performance:
+
+1.  **Foreign Key (1:N) & One-to-One (1:1):**
+
+    - **DRF Default:** Maps the field to a **`PrimaryKeyRelatedField`**.
+    - **Output:** Returns only the **Primary Key (ID)** of the related instance.
+    - **Efficiency:** The ID is already loaded (cached) on the parent model instance from the initial list query (e.g., `Option.objects.all()` loads `attribute_id`). **No extra database queries are needed per instance ($N$ calls).**
+
+2.  **Many-to-Many (M:N):**
+    - **DRF Default:** Maps the field to a **`PrimaryKeyRelatedField(many=True)`**.
+    - **Output:** Returns a **list of Primary Keys (IDs)** for all related instances.
+    - **Efficiency:** Django's ORM or DRF's internal mechanism efficiently retrieves all related IDs for the entire queryset using a separate, single batch query (similar to using `prefetch_related`). **This prevents the N+1 problem** by resolving all M2M relationships in $1 + 1$ queries (one for the main objects, one for all M2M IDs).
+
+**In short:** When you only request the default representation (the ID), DRF is "smart enough" to use the most minimal and efficient query possible, ensuring you avoid the classic N+1 performance bottleneck.
+
+The N+1 problem only arises when you try to access data _beyond_ the ID (e.g., `source='attribute.name'` or using a nested serializer) without explicitly pre-fetching the data using Django ORM methods like `select_related()` or `prefetch_related()`.
+
 ## Question:
 
 ## Answer:
