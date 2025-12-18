@@ -1267,6 +1267,16 @@ Inside `validate_product`, `product` will be:
 
 ## Question:
 
+About `ForeignKey` fields in Django models, and about its `on_delete` parameter, I've already learnt `CASCADE` and `SET_NULL` options. Now teach me about the `PROTECT` option with this example:
+
+```python
+value_option = models.ForeignKey(
+        Option,
+        on_delete=models.PROTECT,
+# Other parameters
+    )
+```
+
 ## Answer:
 
 ## Question:
