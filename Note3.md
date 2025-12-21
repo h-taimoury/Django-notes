@@ -1425,16 +1425,221 @@ attribute_instance.categories.set(category_list)
 
 ## Question:
 
+Tell me if I'm correct. If we have any relational field in our model, for example in `Product` model, and we want to create a new instance by sending a request from frontend, if the relational field is a `to one` relationship, we need an ID sent from frontend and if it's a `to many` relationship, like the `categories` field on `Product` model, we need an array of `Category` IDs sent from frontend.
+
+By the time the data reaches the serializer's validation methods like `validate` or `validate_product`, these methods don't receive IDs but the actual model instances.
+
+So in `validate_product(self, x)`, x will be a `Product` instance and in `validate(self, data)`, `data["categories"]` will be a list of `Category` instances.
+
+If it's true what is said above, explain them more and better.
+
 ## Answer:
+
+You are **100% correct**. Your understanding of how Django Rest Framework (DRF) bridges the gap between a JSON request and Python objects is spot on.
+
+What you are describing is the core magic of the **Serializer's "to_internal_value"** process.
+
+---
+
+### 1. The Frontend Perspective (JSON)
+
+The frontend doesn't know about Python objects or database rows; it only knows strings, numbers, and arrays. To create a relationship, it must send the "pointer" (the ID).
+
+- **To-One (ForeignKey or OneToOneField):** Expects a single integer or string ID.
+
+```json
+{ "attribute": 5 }
+```
+
+- **To-Many (ManyToManyField):** Expects an array (list) of IDs.
+
+```json
+{ "categories": [1, 2, 4] }
+```
+
+---
+
+### 2. The Serializer's Transformation
+
+Before your `validate` or `validate_<field_name>` methods are ever called, the Serializer performs a "lookup." It takes those IDs, goes to the database, and says, _"Give me the actual objects associated with these IDs."_
+
+- If the ID exists, it converts the ID into a **Model Instance**.
+- If the ID doesn't exist, it stops right there and returns a **400 Bad Request** ("Invalid pk").
+
+### 3. Inside the Validation Methods
+
+By the time the data reaches you in the `validate` method, the "cleaning" has already happened. You are no longer working with raw data, but with **rich Python objects**.
+
+#### `validate_field(self, value)`
+
+If you have `validate_product(self, value)`, the `value` is the actual `Product` instance. This allows you to do powerful checks immediately:
+
+```python
+def validate_product(self, product_instance):
+    # You can access attributes of the object directly!
+    if not product_instance.is_active:
+        raise serializers.ValidationError("Cannot add values to an inactive product.")
+    return product_instance
+
+```
+
+#### `validate(self, data)`
+
+The `data` dictionary is now a collection of objects. For a Many-to-Many field like `categories`, `data['categories']` is a **list of Category instances**.
+
+### Summary Table
+
+| Relationship                             | Frontend Sends          | `validate()` Receives                    |
+| ---------------------------------------- | ----------------------- | ---------------------------------------- |
+| **ForeignKey or OneToOneField** (To-One) | `1` (Integer)           | `Instance` (Object)                      |
+| **ManyToManyField** (To-Many)            | `[1, 2]` (List of Ints) | `[Instance, Instance]` (List of Objects) |
 
 ## Question:
 
+When using the custom `User` model in another app's models.py, is it better to access the custom `User` model this way:
+
+```python
+from django.conf import settings
+User = settings.AUTH_USER_MODEL
+```
+
+or this way:
+
+```python
+from django.contrib.auth import get_user_model
+User = get_user_model()
+```
+
 ## Answer:
+
+When you are writing a `models.py` file, the **absolute best practice** is to use `settings.AUTH_USER_MODEL`.
+
+Here is the breakdown of why this matters and how to use both correctly.
+
+---
+
+### 1. In `models.py`: Use `settings.AUTH_USER_MODEL`
+
+When Django starts, it loads applications one by one. If your `orders` app tries to run `get_user_model()` before the `users` app is fully loaded, Django will throw an **ImproperlyConfigured** error or a circular import error.
+
+By using `settings.AUTH_USER_MODEL`, you are simply passing a **string** (e.g., `'users.User'`) to the ForeignKey. Django will wait until all apps are loaded before it resolves that string into the actual Model class.
+
+**The Correct Way:**
+
+```python
+from django.conf import settings
+from django.db import models
+
+class Order(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='orders'
+    )
+
+```
+
+---
+
+### 2. Everywhere Else: Use `get_user_model()`
+
+In any file that is **not** `models.py` (such as `serializers.py`, `views.py`, `tests.py`, or `tasks.py`), you should use `get_user_model()`.
+
+At this stage of execution, the apps are already loaded, and `get_user_model()` provides the actual Python class, which gives you access to model methods, managers (like `.objects.create()`), and fields.
+
+**Example in `serializers.py`:**
+
+```python
+from django.contrib.auth import get_user_model
+from rest_framework import serializers
+
+User = get_user_model()
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['email', 'first_name']
+
+```
+
+---
+
+### Comparison at a Glance
+
+| Location           | Recommended Method         | Reason                                                      |
+| ------------------ | -------------------------- | ----------------------------------------------------------- |
+| **models.py**      | `settings.AUTH_USER_MODEL` | Prevents circular imports and "AppRegistryNotReady" errors. |
+| **views.py**       | `get_user_model()`         | Provides the actual class to perform queries.               |
+| **serializers.py** | `get_user_model()`         | Necessary for the `Meta.model` reference.                   |
+| **tests.py**       | `get_user_model()`         | Best for creating test users dynamically.                   |
+
+---
+
+### Summary
+
+- **Always** use `settings.AUTH_USER_MODEL` for `ForeignKey`, `OneToOneField`, or `ManyToManyField` definitions in your models.
+- **Always** use `get_user_model()` when you need to perform logic, queries, or reference the User class in other files.
 
 ## Question:
 
+In `Order` model, what is `order_key` and what is it used for?
+
 ## Answer:
+
+Here is the explanation for `order_key` and how it functions in a production backend.
+
+---
+
+### What is the `order_key`?
+
+The `order_key` (sometimes called a `payment_intent_id` or `idempotency_key`) is a unique string generated **at the moment the user clicks "Checkout,"** but _before_ the payment is actually confirmed by the bank.
+
+#### Why do we use it?
+
+1. **Payment Synchronization:** When you send a user to a payment gateway (like Stripe, PayPal, or a local gateway), the gateway needs a way to "talk back" to your server. When the payment is successful, the gateway sends a "Webhook" (a notification) to your backend saying: _"Payment for Key X was successful."_ Your server then looks up the Order with that `order_key` and changes the status from `pending` to `paid`.
+2. **Double-Spend Prevention:** It prevents a user from accidentally paying for the same order twice if they refresh the page or click the "Pay" button multiple times. The server checks the key and sees an transaction is already in progress.
+3. **Security:** It acts as a secure, non-sequential identifier. While the `id` of an order is predictable (`1, 2, 3...`), the `order_key` is usually a long UUID or hash that is difficult to guess.
+
+---
+
+In a real-world scenario, you want that key to be generated automatically the moment the order is created.
+
+Here is why the **predictability** of that key is a major security risk, and how to use `uuid` correctly in your model.
+
+### Why must the `order_key` be unpredictable?
+
+If you used a predictable key (like the Order ID `101`, `102`, etc.), your system would be vulnerable to several attacks:
+
+1. **Insecure Direct Object Reference (IDOR):** If a malicious user knows their order is `101`, they could try to guess the URL for order `102`. If your payment logic or "Success" page relies solely on that key, they could potentially view someone else's order or even mark it as "Paid" by tricking a webhook.
+2. **Payment Tampering:** If an attacker can guess the next `order_key`, they might initiate a payment session for an order that hasn't even been finalized yet, or intercept a callback from a payment provider (like Stripe or PayPal) to confirm a fake transaction.
+3. **Information Leakage:** Sequential IDs tell competitors exactly how many orders you are processing. A UUID (Universal Unique Identifier) reveals nothing about your business volume.
+
+---
+
+### How the Payment Flow uses this Key
+
+1. **Checkout:** The user clicks "Pay". The `Order` is saved, and a UUID like `550e8400-e29b-41d4-a716-446655440000` is generated.
+2. **Redirect:** You send the user to the Payment Gateway and include this UUID as a "reference".
+3. **Webhook:** The Bank/Stripe sends a message back to your `/api/payments/webhook/` saying: _"Transaction successful for Reference: 550e8400..."_
+4. **Verification:** Your server looks for the Order with that specific `order_key`. Because it’s a UUID, it is virtually impossible for someone to "guess" a successful payment reference.
 
 ## Question:
 
+Do i need to install the `uuid` library to use it in `Django`?
+
 ## Answer:
+
+No, you do not need to install anything. `uuid` is part of the **Python Standard Library**.
+
+Just like `datetime` or `json`, it comes built-in with Python. You only need to add `import uuid` at the top of your `models.py` file.
+
+### Why `default=uuid.uuid4` (without parentheses)?
+
+This is a common Django mistake.
+
+- If you write `default=uuid.uuid4()`, Python calls the function **once** when the server starts, and every single order will get the exact same key.
+- If you write `default=uuid.uuid4`, you are giving Django the "recipe." Django will call the function **every time** a new record is saved, ensuring every order gets a unique key.
+
+### Summary of UUID types
+
+While there are several versions, **UUID4** is the industry standard for e-commerce keys because it is generated using **random numbers**, making it the most unpredictable version.
