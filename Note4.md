@@ -60,7 +60,7 @@ def get_queryset(self):
     return Address.objects.filter(user=self.request.user)
 ```
 
-Tthe problem that comes to my mind is that for listing the user's addresses, this queryset is great, but when creating the first address, this queryset `Address.objects.filter(user=self.request.user)` returns nothing, right? So doesn't it cause a problem?
+A problem that comes to my mind is that for listing the user's addresses, this queryset is great, but when creating the first address, this queryset `Address.objects.filter(user=self.request.user)` returns nothing, right? So doesn't it cause a problem?
 
 ## Answer:
 
