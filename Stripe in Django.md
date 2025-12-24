@@ -286,3 +286,117 @@ This tutorial will teach you about how to integrate your django application with
   ```shell
   ngrok http 8000
   ```
+
+## Question:
+
+`Stripe` provides a testing environment for developers. We can get `Publishable` key and `Secret` key there. I think in real world projects, we get Publishable keys and Secret keys too. My question is, what other features we can test in this environment?
+
+## Answer:
+
+Stripe's test environment is much more than just a place to use fake keys; it is a full-scale simulation of the global financial system. Professional developers use it to "break" their app in every possible way before a real customer ever sees it.
+
+Here are the most powerful features you can test in this environment:
+
+---
+
+### 1. Specific Payment Failures
+
+You don't just test "success." Stripe provides a list of **magic card numbers** that trigger specific bank responses. This allows you to test if your Django code handles errors gracefully.
+
+- **Insufficient Funds:** Use a specific card number to see how your UI tells the user they need more money.
+- **Card Declined:** Test how your app handles a generic "no" from the bank.
+- **Fraud Triggers:** Use a "stolen" card number to verify that Stripe Radar blocks it and that your app doesn't accidentally fulfill the order.
+
+### 2. 3D Secure (SMS Verification)
+
+You can simulate the "SMS code" popup. Stripe provides test cards that **force** a 3D Secure challenge. This is vital for testing how your frontend handles the transition from your site to the bank's verification screen and back.
+
+### 3. Test Clocks (For Subscriptions)
+
+If you were building a subscription service (e.g., $10/month), you wouldn't want to wait 30 days to see if your "Renewal" logic works.
+
+- **Time Travel:** Stripe has a feature called **Test Clocks**. You can create a customer, attach them to a clock, and then "fast-forward" that clock by 1 month.
+- **The Result:** Stripe will instantly trigger the next month's invoice and webhook as if a month has actually passed.
+
+### 4. Webhook Triggering
+
+You don't have to actually complete a payment to test your webhook code. You can use the **Stripe CLI** to manually "fire" any event you want.
+
+```bash
+# This sends a 'payment succeeded' event to your local Django server
+stripe trigger payment_intent.succeeded
+
+```
+
+This is how professionals ensure their backend logic (like sending confirmation emails) works without needing to fill out a checkout form every time.
+
+### 5. Disputes and Refunds
+
+You can simulate a customer filing a **Dispute** (chargeback).
+
+- In the dashboard, you can "win" or "lose" the dispute to see how your backend reacts to the money being pulled out of your account.
+- You can also test **Refunds** to ensure that if you refund a user, your `Order` status in Django updates from `paid` back to `refunded`.
+
+---
+
+### Summary Table: Test Mode vs. Live Mode
+
+| Feature      | Test Mode                  | Live Mode                      |
+| ------------ | -------------------------- | ------------------------------ |
+| **Money**    | Simulated ($0.00 cost)     | Real (Actual charges)          |
+| **Cards**    | Only "Magic" numbers work  | Real Visa/Mastercards only     |
+| **Emails**   | Sent only to you (The Dev) | Sent to the real Customer      |
+| **Disputes** | Simulated outcomes         | Real legal process             |
+| **Webhooks** | Can be manually triggered  | Triggered by real world events |
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
