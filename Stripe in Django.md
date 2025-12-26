@@ -1547,3 +1547,39 @@ This is another reason why I recommended moving toward `request.headers`. It han
 - **Standard Python:** Dicts are case-sensitive.
 - **Django's `request.headers`:** It is a special "Case-Insensitive Mapping" designed to follow HTTP standards.
 - **The Benefit:** It makes your backend code more "forgiving" and easier to maintain.
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
+
+## Question:
+
+## Answer:
