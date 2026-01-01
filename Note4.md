@@ -103,31 +103,286 @@ Your `get_queryset` is perfectly safe.
 
 ## Question:
 
+Teach me about this code:
+
+```python
+class OutOfStockError(Exception):
+    """Raised when one or more products do not have enough available quantity."""
+
+    pass
+```
+
+Is this the way to create a custom error in Python? I think we don't need to import `Exception` right? You just did `pass` in this class, nothing else. So did we really need it?
+
 ## Answer:
+
+Yes — this **is exactly the standard way** to create a custom exception in Python.
+
+Very short explanations:
+
+### 1) Do we need to import `Exception`?
+
+**No.**
+`Exception` is a built-in class, always available.
+
+```python
+class OutOfStockError(Exception):
+```
+
+is valid without any import.
+
+---
+
+### 2) Why does the class body only have `pass`?
+
+Because:
+
+- you don’t need extra behavior
+- you only need a **distinct exception type**
+
+`pass` just means “no additional attributes or methods”.
+
+This is perfectly normal and very common.
+
+---
+
+### 3) Do we really need this class?
+
+**Yes, for clean control flow.**
+
+It lets you do this:
+
+```python
+except OutOfStockError:
+    return Response(..., 409)
+```
+
+instead of:
+
+- catching generic `Exception`
+- inspecting error messages (bad practice)
+
+---
+
+### 4) Why not just raise `Exception("out of stock")`?
+
+Because:
+
+- you can’t reliably distinguish it from other errors
+- custom exceptions make intent explicit
+- they scale well as the project grows
+
+---
+
+### TL;DR
+
+- ✅ This is the correct way to define a custom error
+- ✅ No import needed for `Exception`
+- ✅ `pass` is enough
+- ✅ You use it for **semantic meaning**, not functionality
 
 ## Question:
 
+If I just raise `Exception("out of stock")`, can't I distinguish it from other errors?
+
 ## Answer:
+
+Short answer: **you technically can, but you shouldn’t.**
+
+Why:
+
+- You’d have to inspect the **error message string**
+- String matching is **fragile** and **unsafe**
+- Messages can change, be translated, or reused
+
+Example of the bad pattern:
+
+```python
+except Exception as e:
+    if "out of stock" in str(e):
+        ...
+```
+
+Problems:
+
+- breaks if message changes
+- catches unrelated errors by accident
+- hard to maintain
+
+With a custom exception:
+
+```python
+except OutOfStockError:
+    ...
+```
+
+- explicit
+- safe
+- intentional
+- production-grade
+
+**Rule:**
+Use custom exception types to distinguish _categories of failure_, not messages.
+
+So yes, it’s possible — but **not professional or robust**.
 
 ## Question:
 
+Tell me again when we start a method name with `_` like in `_reserve_stock_for_order`?
+
 ## Answer:
+
+You start a method name with `_` when it is **internal / private by convention**.
+
+It means:
+
+- “Do not call this from outside this class/module”
+- “This is an implementation detail”
+- “Not part of the public API”
+
+No enforcement, just a **strong convention** used in production code.
 
 ## Question:
 
+What does `timezone-aware` mean in `timezone-aware datetime`?
+
 ## Answer:
+
+A **timezone-aware datetime** is a `datetime` object that **knows which timezone it represents** (UTC, etc.).
+
+In Django:
+
+- `timezone.now()` → **aware**
+- `datetime.now()` → **naive** (no timezone info)
+
+Why it matters:
+
+- avoids bugs when comparing datetimes
+- required for correct expiration logic
+- Django expects timezone-aware datetimes when `USE_TZ = True`
 
 ## Question:
 
+So by using `timezone.now()`, we are accessing the time based on the location of the server?
+
 ## Answer:
+
+No.
+
+**`timezone.now()` does NOT use the server’s local time.**
+
+It returns:
+
+- **UTC time** (when `USE_TZ = True`, which is standard in Django)
+- as a **timezone-aware datetime**
+
+So it’s **independent of server location**.
+
+That’s why it’s safe and consistent across environments.
 
 ## Question:
 
+So why not to use `datetime.now`?
+
 ## Answer:
+
+Very short:
+
+Because `datetime.now()` returns a **naive datetime** (no timezone info).
+
+Problems with `datetime.now()`:
+
+- can’t be safely compared with Django’s timezone-aware fields
+- breaks expiration logic
+- Django will warn or error when `USE_TZ = True`
+
+Rule:
+
+- **Django apps → always use `timezone.now()`**
+- `datetime.now()` is only safe if you manually attach a timezone (which most people forget)
+
+So: use `timezone.now()` to avoid subtle, production bugs.
 
 ## Question:
 
+Teach me about the `values_list` and `first` methods like in this example:
+
+```python
+existing_session_id = (
+    StockReservation.objects.filter(
+        order=order,
+        status=StockReservation.Status.ACTIVE,
+        expires_at__gt=timezone.now(),
+        stripe_session_id__isnull=False,
+    )
+    .values_list("stripe_session_id", flat=True)
+    .first()
+)
+```
+
 ## Answer:
+
+### `values_list()`
+
+```python
+.values_list("stripe_session_id", flat=True)
+```
+
+- Tells Django: **don’t return model objects**
+- Return **only the specified field**
+- `flat=True` → return a **simple list**, not tuples
+
+Without `flat=True`:
+
+```python
+[("cs_123",), ("cs_456",)]
+```
+
+With `flat=True`:
+
+```python
+["cs_123", "cs_456"]
+```
+
+---
+
+### `first()`
+
+```python
+.first()
+```
+
+- Returns the **first item** from the queryset
+- If no rows exist → returns `None`
+- Does **not** raise an exception
+
+---
+
+### Combined meaning (in your code)
+
+```python
+existing_session_id = (
+    queryset
+    .values_list("stripe_session_id", flat=True)
+    .first()
+)
+```
+
+Means:
+
+> “Give me **one Stripe session ID** (string) for this order if it exists, otherwise `None`.”
+
+No model objects, no loops, one DB query, very efficient.
+
+---
+
+### Why this pattern is good here
+
+- You only need **one value**
+- You don’t care _which_ one, just whether one exists
+- Minimal memory + clean intent
+
+That’s the whole idea.
 
 ## Question:
 
