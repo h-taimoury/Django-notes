@@ -94,7 +94,7 @@ What is a `System` or `Archived` user account?
 
 ## Answer:
 
-A `System or `Archived` user account is a special type of user entity created in a system or database for **internal management, content preservation, and maintaining data integrity**, rather than for a real, interacting human being.
+A `System` or `Archived` user account is a special type of user entity created in a system or database for **internal management, content preservation, and maintaining data integrity**, rather than for a real, interacting human being.
 
 A `System/Archived` account is a conceptual, non-human role in your application design. It's user account created to serve as a placeholder owner for content and maintain data integrity, typically referenced as a default value (e.g., default=1) in a `ForeignKey` relationship.
 
