@@ -1550,11 +1550,63 @@ This is another reason why I recommended moving toward `request.headers`. It han
 
 ## Question:
 
+Describe the frontend user workflow in an e-commerce platform after he adds some products to his cart and wants to finalize his order.
+
 ## Answer:
+
+1. **Go to cart**
+
+- User lands on the Cart page and can freely edit the basket: change quantities, remove items, apply/clear a cart-level coupon (optional), continue shopping.
+- Nothing is “locked” yet; this is still a flexible, pre-purchase state.
+- Main actions: **Continue shopping** or **Checkout**.
+
+2. **Checkout (on your site)**
+
+- User enters the checkout flow (often 1–3 screens, sometimes one page).
+- You collect/confirm the purchase details needed to price the order correctly:
+
+  - shipping address
+  - shipping method
+  - billing details (sometimes)
+  - taxes/VAT calculations
+  - discounts/coupons
+  - contact email/phone
+
+- You show the **final totals** (items + shipping + tax − discounts).
+- Main action: **Proceed to payment**.
+
+3. **Proceed to payment**
+
+- This is the moment your frontend calls your backend to:
+
+  - validate the checkout data again (stock, prices, totals)
+  - create/update the **Order** (usually from “draft” → “payment_pending”)
+  - create **StockReservation holds** (so availability updates immediately)
+  - create the **Stripe Checkout Session** (with expiry)
+
+- Your backend returns the Stripe `checkout_url`, and the frontend redirects the user to Stripe.
+
+4. **Pay (on Stripe Checkout)**
+
+- User enters card/payment details and clicks **Pay**.
+- Stripe completes (or fails) the payment.
+- Stripe redirects the user back to your **success_url** or **cancel_url**.
+- Separately (and most importantly), Stripe sends your backend a **webhook**:
+
+  - on success: you mark the order paid, consume reservations, decrement on-hand stock, fulfill
+  - on expiration/cancel: you release reservations so stock becomes available again
 
 ## Question:
 
+In which phase I should create an order instance?
+
 ## Answer:
+
+Create the **Order** at **phase 2: Checkout (on your site)**.
+
+- Cart (phase 1) stays mutable and “informal”.
+- When the user clicks **Checkout**, you create an **Order in draft/pending state** (snapshot of cart items).
+- When the user clicks **Proceed to payment** (phase 3), you **finalize** the order (totals/tax/shipping), **reserve stock**, and create the Stripe session.
 
 ## Question:
 
