@@ -1610,7 +1610,25 @@ Create the **Order** at **phase 2: Checkout (on your site)**.
 
 ## Question:
 
+Tell me what is `TTL`?
+
 ## Answer:
+
+**TTL = Time To Live**
+
+It means:
+
+- how long something is considered **valid**
+- after that time, it **expires automatically**
+
+In your case:
+
+- TTL = how long a **StockReservation / Stripe session** is allowed to exist
+- after TTL → reservation is released, stock becomes available again
+
+Example:
+
+- TTL = 15 minutes → if user doesn’t pay in 15 min, inventory is freed
 
 ## Question:
 
