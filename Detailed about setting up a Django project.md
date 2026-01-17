@@ -696,8 +696,7 @@ STATICFILES_DIRS = [
 
 But there's one more problem. When we click on an image in admin panel to see the image, the url is not okay so we need to fix this.
 
-In settings.py and below 'STATIC_URL = 'static/'
-' add MEDIA_URL:
+In `settings.py` and below `STATIC_URL = 'static/'` add `MEDIA_URL`:
 
 ```
 MEDIA_URL = '/media/'
