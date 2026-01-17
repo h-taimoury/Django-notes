@@ -1807,7 +1807,7 @@ Using a serializer in Django REST Framework (DRF) is very similar to using the .
 
 Stripping the "Complexity":
 
-Mongoose (.lean()): When you call Product.find().lean(), Mongoose returns simple, plain JavaScript objects (POJOs) instead of full Mongoose Documents. It strips away all the Mongoose-specific overhead, such as change tracking, validation, virtuals, and methods.
+Mongoose (.lean()): When you call Product.find().lean(), Mongoose returns plain JavaScript objects (POJOs) instead of full Mongoose Documents. It strips away all the Mongoose-specific overhead, such as change tracking, validation, virtuals, and methods.
 
 DRF Serializer: A serializer takes a Django Model instance and strips away all the complex Python object features (methods, database session information, relationships) to produce a simple Python dictionary that is ready to be converted into JSON.
 
@@ -1980,7 +1980,7 @@ def getUsers(request):
     return Response(serializer.data)
 ```
 
-**Note:** You **don't** need to include `IsAuthenticated` alongside `IsAdminUser`, as being an admin **implies** being authenticated.
+**Note:** You **don't** need to include `IsAuthenticated` alongside `IsAdminUser`, because `IsAuthenticated` permission class check process includes the `IsAdminUser` check process plus checking that the `is_staff` field on the retrieved user object is `True`. Is it clear?
 
 Then add a path in `urls.py` file `users` app like this:
 
@@ -2505,8 +2505,11 @@ This allows the `Order` instance (`obj`) to find the single associated `Shipping
 <!-- Todo: Continue from here -->
 
 We need to test these api endpoints:
+
+```text
 POST /api/products/upload/
 GET /api/orders/
+```
 
 Note: It's better to replace /api/products/upload/ sending product_id in request body with /api/products/:id/upload, sending product id as a path parameter.
 
@@ -2524,7 +2527,7 @@ The first step is to move the React project folder into the Django project's bac
 
 1.  **Stop Both Servers:** Turn off both your React development server (running on port 3000) and your Django server (running on port 8000). You can usually do this by pressing $\text{Ctrl}+\text{C}$ in the respective terminal windows.
 2.  **Move the React Folder:** Take your React project folder (often named $\mathbf{frontend}$ or similar) and drag it into your main Django project folder (often named $\mathbf{backend}$ or similar, where $\text{manage.py}$ resides).
-    - _Tip:_ If you have your text editor or command prompt open and **cd'd** into these directories, you might need to close them before the move is successful.
+    - _Tip:_ If you have your text editor or command prompt open and **cd** into these directories, you might need to close them before the move is successful.
 
 ### 2\. Building React into Static Assets
 
@@ -2606,7 +2609,7 @@ Your Django project is now configured to serve the React application.
     ```bash
     python manage.py runserver
     ```
-2.  **Check Port 8000:** Navigate to $\text{[http://127.0.0.1:8000/](http://127.0.0.1:8000/)}$ in your web browser. You should now see your React application.
+2.  **Check Port 8000:** Navigate to [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your web browser. You should now see your React application.
 3.  **Workflow for Changes:** If you want to make changes to your React code:
     - You can still run $\text{npm start}$ in the $\text{frontend}$ folder to develop with React's hot-reloading on **Port 3000**.
     - To see the changes reflected in the **Django server (Port 8000)**, you must **stop the Django server**, go back to the $\text{frontend}$ folder, run $\text{npm run build}$ again, and then restart the Django server.
