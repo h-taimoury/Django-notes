@@ -535,7 +535,3 @@ That’s the whole idea.
 ## Question:
 
 ## Answer:
-
-## Question:
-
-## Answer:
