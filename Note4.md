@@ -386,7 +386,74 @@ That’s the whole idea.
 
 ## Question:
 
+What is `get_or_create()` method in following example?
+
+```pthon
+Cart.objects.get_or_create()
+```
+
 ## Answer:
+
+### What `get_or_create()` does
+
+The `get_or_create()` method in Django is a **shortcut that either fetches an existing object from the database or creates a new one if it doesn’t exist**.
+
+**Syntax:**
+
+```python
+obj, created = Model.objects.get_or_create(**lookup_fields, defaults={...})
+```
+
+- `lookup_fields` → fields used to **search** the database.
+- `defaults` → optional dictionary of additional fields to use **only if a new object is created**.
+
+---
+
+### How it works step by step
+
+```python
+cart, created = Cart.objects.get_or_create(user=request.user)
+```
+
+1. Django tries to **find a Cart** where `user = request.user`.
+2. **If it exists:**
+   - Returns the existing cart (`created = False`).
+
+3. **If it does not exist:**
+   - Creates a **new Cart object** using:
+     - The **lookup fields** (`user=request.user`)
+     - Any **fields in `defaults`** if provided.
+
+   - Returns the new cart (`created = True`).
+
+So, for example:
+
+```python
+cart, created = Cart.objects.get_or_create(
+    user=request.user,
+    defaults={"is_active": True}
+)
+```
+
+- If no Cart exists for `request.user`, Django creates a new Cart with:
+
+  ```python
+  user = request.user  # from lookup fields
+  is_active = True     # from defaults
+  ```
+
+- The new object is saved to the database automatically.
+
+---
+
+### Key points
+
+- The **lookup fields are always used**, when retrieving an existing object or when creating a new object.
+- `defaults` are **only used if creating** a new object.
+- Returns a **tuple** `(object, created)` where `created` is `True` if a new object was made, `False` otherwise.
+
+✅ **TL;DR:**
+`get_or_create()` = “Get the object if it exists. If not, create a new object with the lookup fields plus any defaults provided.”
 
 ## Question:
 
@@ -524,6 +591,4 @@ That’s the whole idea.
 
 ## Answer:
 
-## Question:
 
-## Answer:
