@@ -6,7 +6,7 @@ So visit python.org and download and install the latest version or just install 
 After that check python being installed by
 
 ```
-py --version
+python3 --version
 ```
 
 ## Create two nested folders:
@@ -18,7 +18,7 @@ Create a folder for the project (e.g. Blog) and create a folder for our backend 
 Use venv module, which is a part of Python's standard library, to create a virtual environment
 
 ```
-py -m venv .venv
+python3 -m venv .venv
 ```
 
 This command will create a '.venv' folder inside of the 'backend' folder.
@@ -32,7 +32,7 @@ The main external package that provides similar functionality is virtualenv.
 For a Bash terminal on windows run
 
 ```
-source .venv/Scripts/activate
+source .venv/bin/activate
 ```
 
 to deactivate the virtual environment, just run
@@ -52,7 +52,7 @@ pip install Django
 To check Django installation, just simply run
 
 ```
-py -m django --version
+python3 -m django --version
 ```
 
 or
@@ -64,7 +64,7 @@ django-admin --version
 another way is to open Python REPL by running
 
 ```
-py
+python3
 ```
 
 Then run
@@ -107,7 +107,7 @@ Remember to put the '.' at the end or specify another location for Django projec
 Run:
 
 ```
-py manage.py runserver
+python3 manage.py runserver
 ```
 
 ## Create an app in Django project
@@ -115,7 +115,7 @@ py manage.py runserver
 Stop the server by pressing Ctrl + C and run
 
 ```
-py manage.py startapp posts
+python3 manage.py startapp posts
 ```
 
 ## Tell our Django project about this new app
@@ -288,7 +288,7 @@ pip install pillow
 Now that we've changed our models, we need to make migrations again:
 
 ```
-py manage.py makemigrations
+python3 manage.py makemigrations
 ```
 
 By running this command, a file named '0001_initial.py' will be added to 'migrations' folder in app's directory.
@@ -296,7 +296,7 @@ By running this command, a file named '0001_initial.py' will be added to 'migrat
 Then we need to apply the migrations. Run:
 
 ```
-py manage.py migrate
+python3 manage.py migrate
 ```
 
 Everytime we make changes to our models, we need to do these steps.

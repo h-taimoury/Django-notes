@@ -546,14 +546,3 @@ cart, created = Cart.objects.get_or_create(
 ## Question:
 
 ## Answer:
-
-## Question:
-
-## Answer:
-
-## Question:
-
-## Answer:
-
-
-
