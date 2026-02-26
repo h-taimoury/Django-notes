@@ -2,6 +2,72 @@
 
 ## Question:
 
+I got an error about the connection between Django on windows and Redis on WSL2 ubuntu. Tell me how we solved it.
+
+## Answer:
+
+Networking between `Windows` and `WSL2` is one of the most common "headaches" for modern developers.
+
+Here is a summary of the problem and the permanent fix for your notes:
+
+---
+
+### The Problem: Networking "Isolation"
+
+- **The Error:** `redis.exceptions.ConnectionError: Error 10061 connecting to 127.0.0.1:6379`.
+- **The Cause:** You were running your **Django Backend on Windows** but your **Redis Server on WSL (Ubuntu)**.
+- **The Logic:** Even though they are on the same physical machine, WSL2 acts like a separate computer on a virtual network. When Django looked at `127.0.0.1`, it was looking at Windows, but Redis was "hiding" inside the WSL network at a different IP address.
+
+---
+
+### The Solution: 3-Step Bridge
+
+#### Step 1: Open the Redis "Door" (WSL Terminal)
+
+By default, Redis only talks to Linux. You have to tell it to listen to the Windows side.
+
+1. Open the config: `sudo nano /etc/redis/redis.conf`
+2. Change `bind 127.0.0.1 ::1` to **`bind 0.0.0.0`**.
+3. Change `protected-mode yes` to **`protected-mode no`**.
+4. Save and Restart: `sudo service redis-server restart`
+
+#### Step 2: Find the "Phone Number" (WSL Terminal)
+
+You need the internal IP address that Windows uses to talk to WSL.
+
+- Command: `hostname -I`
+- _Note: Usually it’s the first IP starting with `172.x.x.x`._
+
+### **Step 3: Point Django to the IP (Windows `settings.py`)**
+
+Update your `CHANNEL_LAYERS` to use that specific IP instead of the default `127.0.0.1`.
+
+```python
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("172.x.x.x", 6379)], # <--- The WSL IP
+        },
+    },
+}
+
+```
+
+---
+
+### Important: The "Next Time" Warning
+
+WSL2 uses **Dynamic IPs**. This means every time you restart your computer or restart the WSL terminal, the IP address (`172.x.x.x`) might change.
+
+**If the error returns tomorrow:**
+
+1. Run `hostname -I` in Ubuntu.
+2. Compare it to the IP in your `settings.py`.
+3. Update the IP if it changed.
+
+## Question:
+
 Tell me what a `@classmethod` is in Python? Does it always receive the class itself as the first argument?
 
 ## Answer:
